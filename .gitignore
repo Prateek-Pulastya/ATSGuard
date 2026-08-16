@@ -1,0 +1,19 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+
+# Generated at runtime — regenerate with the scripts, don't commit
+samples/
+gate_out/
+my_gate_out/
+verify_gate_out/
+intake/
+
+# Real resumes and anything derived from them — never commit
+my_resumes/
+
+# graphify working dir — the showcase copies live in docs/graph/
+graphify-out/

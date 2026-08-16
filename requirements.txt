@@ -1,0 +1,7 @@
+# The core detector (atsguard.py, layers 2-4) runs on the Python standard
+# library alone. Everything below is optional, only for the extras noted.
+
+pymupdf        # read PDF text + styling (layer 1 extraction)
+python-docx    # read DOCX text + styling, incl. hidden runs (layer 1)
+reportlab      # generate_test_files.py — build sample malicious PDFs
+pillow         # make_media.py, flowchart.py — screenshots, GIF, flowchart
