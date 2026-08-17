@@ -17,3 +17,10 @@ my_resumes/
 
 # graphify working dir — the showcase copies live in docs/graph/
 graphify-out/
+
+# user's own blind-test artifacts
+blind*.json
+blind_recall_report.md
+
+# Claude Code local data
+.claude/
