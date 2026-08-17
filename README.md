@@ -121,7 +121,7 @@ The full walkthrough, including batch-scanning a whole folder of résumés throu
 
 I ran the whole project through [graphify](https://github.com/safishamsi/graphify), which turns a codebase into an interactive knowledge graph of every function and concept and how they connect.
 
-[Open the interactive graph](https://htmlpreview.github.io/?https://github.com/Prateek-Pulastya/ATSGuard/blob/main/docs/graph/graph.html) (119 nodes, click and drag the nodes around), or here's the static view:
+[Open the interactive graph](https://htmlpreview.github.io/?https://github.com/Prateek-Pulastya/ATSGuard/blob/main/docs/graph/graph.html) (128 nodes, click and drag the nodes around), or here's the static view:
 
 ![Knowledge graph of the ATSGuard codebase](docs/graph/graph.svg)
 
