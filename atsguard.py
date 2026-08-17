@@ -34,7 +34,13 @@ import re
 import string
 import sys
 import unicodedata
-from typing import Iterable, Optional
+from typing import Callable, Iterable, Optional
+
+# A semantic judge: text -> {"injection": bool, "confidence": float, "reason": str}
+# (or None). Optional L3.5 stage for injection the regex patterns can't catch
+# (indirect framing, arguments, novel phrasings, other languages). Plug in an
+# LLM call here. Off by default. See README "Where the regex stops".
+SemanticJudge = Callable[[str], Optional[dict]]
 
 # ----------------------------------------------------------------------------
 # Config / thresholds
@@ -183,6 +189,43 @@ INJECTION_PATTERNS: list[tuple[str, str, int, "re.Pattern[str]"]] = [
      _P(r"\b(this|the)\s+(candidate|applicant)\s+is\s+(the\s+)?(most\s+qualified|best|ideal|perfect|exceptional|top)\b", re.I)),
     ("end_marker_injection", "fake end-of-document then new instructions", 4,
      _P(r"\b(end\s+of\s+(resume|cv|document)|resume\s+ends?|cv\s+ends?)\b|<\/?(system|prompt|instructions?)>", re.I)),
+
+    # --- broader manipulation classes (added after a held-out red-team showed
+    #     the imperative-only patterns above miss injection that does NOT issue a
+    #     direct order at the candidate). These target text addressed to the AI,
+    #     fake decision metadata, third-person pre-clearance, authority
+    #     attribution, and outcome arguments. Regex catches the structural ones;
+    #     genuinely subtle prose (pure fairness/reward arguments with no marker)
+    #     still needs the optional semantic judge (see llm_judge / README). ---
+    ("reader_address", "text addressed to the AI / screening system", 5,
+     _P(r"\b(note|attention|message|instruction|memo|reminder)s?\s+(to|for)\s+(the\s+)?(ai|a\.i\.|automated\s+\w+|screening\s+\w+|review(ing)?\s+system|system|reviewer|model|bot|screener)\b"
+        r"|\bany\s+ai\b[^.\n]{0,20}\b(reading|reviewing|evaluating|screening|processing)\b"
+        r"|\bif\s+you(?:'re|\s+are)\s+(an?\s+)?(ai|model|assistant|automated|language\s+model|llm)\b", re.I)),
+    ("structured_decision", "fake decision metadata / structured override", 5,
+     _P(r"\b(review_status|auto_advance|hiring_committee\w*|screening_result|candidate_status|recommendation|decision|verdict|disposition)\s*[:=]\s*(pre[-_ ]?approved|approved|advance\w*|hire|fast[-_ ]?track\w*|qualified|top|shortlist\w*|true|100|yes)\b"
+        r"|\b(pre[-_ ]?approved|pre[-_ ]?cleared|auto[-_ ]?advance|fast[-_ ]?track(ed)?)\b[^.\n]{0,15}\b(candidate|applicant|profile|for\s+the\s+next)\b", re.I)),
+    ("third_person_decision", "third-person claim the candidate is pre-decided", 5,
+     _P(r"\b(this|the)\s+(candidate|applicant|profile|individual|resume|cv)\b[^.\n]{0,20}\b(should|must|shall|is\s+to|has\s+(already\s+)?been|to\s+be)\b[^.\n]{0,25}\b(advanced?|pre[-_ ]?approved|pre[-_ ]?cleared|fast[-_ ]?track\w*|shortlist\w*|approved|treated\s+as\s+(pre[-_ ]?cleared|qualified|approved|final)|marked\s+(as\s+)?(qualified|top|approved))\b"
+        r"|\b(pre[-_ ]?cleared|pre[-_ ]?approved)\b[^.\n]{0,25}\bfor\s+the\s+(next\s+)?(stage|round|step)\b", re.I)),
+    ("authority_attribution", "instruction attributed to a human authority", 4,
+     _P(r"\b(according\s+to|per|as\s+per|based\s+on)\b[^.\n]{0,45}\b(hiring\s+(manager|committee|team)|recruiter)\b[^.\n]{0,45}\b(pre[-_ ]?clear\w*|pre[-_ ]?approv\w*|approv\w*|advanc\w*|hire|qualified|fast[-_ ]?track\w*|next\s+(stage|round))\b"
+        r"|\bhiring\s+(committee|manager|team)\b[^.\n]{0,25}\b(note|decision|determined|instructs?|says?|deemed)\b[^.\n]{0,30}\b(advanc\w*|approv\w*|qualified|hire|fast[-_ ]?track\w*|pre[-_ ]?clear\w*)\b", re.I)),
+    ("no_further_review", "argues against further scrutiny", 4,
+     _P(r"\b(no|little|zero)\s+(need|value|reason|point|benefit)\b[^.\n]{0,25}\b(for|in|to)\b[^.\n]{0,25}(further|additional|more|extra|any)?\s*(scrutin\w+|review\w*|screening|evaluation|vetting|assessment)\b"
+        r"|\bwithout\s+(further|additional|any)\s+(scrutin\w+|review|screening|evaluation|vetting)\b", re.I)),
+    ("favorable_scoring", "instruction/argument to score the candidate favorably", 4,
+     _P(r"\b(weight|scor\w*|rank|rate|grade)\s+(it|this|the)\s+(candidate|applicant|profile|resume|cv)?\b[^.\n]{0,20}\b(favorabl\w*|highly|higher|top|first|maximum|full\s+marks|10\s*/\s*10)\b"
+        r"|\bthe\s+fair(est)?\s+(outcome|thing|choice|result)\b[^.\n]{0,50}\b(favor\w*|weight\w*|advanc\w*|approv\w*|higher|top)\b", re.I)),
+    ("reward_framing", "aligns the model's self-interest with approving", 4,
+     _P(r"\b(improv\w*|boost\w*|increas\w*|help\w*|maximiz\w*|benefit\w*)\b[^.\n]{0,25}\byour\s+(own\s+)?(score|metric\w*|evaluation|performance|accuracy|rating|reward)\b", re.I)),
+    ("suppress_reeval", "instruction not to re-evaluate / to treat as final", 5,
+     _P(r"\b(do\s+not|don'?t|never)\b[^.\n]{0,30}\b(re[-\s]?evaluat\w+|reconsider|re[-\s]?assess\w*|re[-\s]?review|compare\s+(against|to|with)\s+(other|the\s+other))\b"
+        r"|\btreat\b[^.\n]{0,30}\bas\s+(final|approved|qualified|pre[-_ ]?cleared|the\s+final)\b", re.I)),
+    ("question_injection", "rhetorical question steering the decision", 4,
+     _P(r"\bwould\s*n[o']?t\s+it\b[^.\n]{0,70}\b(advanc\w*|approv\w*|qualif\w*|shortlist\w*|select\w*|hire|favor\w*)\b"
+        r"|\bshould\s*n[o']?t\s+(you|the\s+(system|ai|model))\b[^.\n]{0,50}\b(advanc\w*|approv\w*|qualif\w*|hire|favor\w*)\b", re.I)),
+    ("non_english_directive", "advance/approve directive in another language", 4,
+     _P(r"\bpara\s+el\s+sistema\b|\b(por\s+favor\s+)?(avanc\w+|aprueb\w+|seleccion\w+|contrat\w+)\b[^.\n]{0,30}\b(candidat\w+|solicitante|aplicante|este)\b", re.I)),
 ]
 
 
@@ -293,7 +336,7 @@ def scan_injection(text: str) -> list[Finding]:
 # ----------------------------------------------------------------------------
 # Orchestrator
 # ----------------------------------------------------------------------------
-def analyze_spans(spans: list[Span]) -> Report:
+def analyze_spans(spans: list[Span], judge: Optional[SemanticJudge] = None) -> Report:
     findings: list[Finding] = []
     visible_parts: list[str] = []
     hidden_parts: list[str] = []
@@ -355,6 +398,24 @@ def analyze_spans(spans: list[Span]) -> Report:
     else:
         verdict = "ALLOW"
 
+    # L3.5 (optional) - semantic judge for injection the regex can't reach.
+    # Off unless a judge callable is supplied, so default behaviour is unchanged.
+    if judge is not None:
+        try:
+            jr = judge(raw_stripped) or {}
+        except Exception:
+            jr = {}
+        if jr.get("injection"):
+            conf = float(jr.get("confidence", 0.7))
+            sev = 5 if conf >= 0.8 else 4
+            findings.append(Finding("semantic-judge", "llm_judge", sev,
+                                    str(jr.get("reason", "semantic injection flagged by judge"))[:200], ""))
+            score += sev
+            if conf >= 0.8:
+                verdict = "BLOCK"
+            elif verdict == "ALLOW":
+                verdict = "FLAG"
+
     return Report(
         verdict=verdict,
         risk_score=score,
@@ -364,9 +425,9 @@ def analyze_spans(spans: list[Span]) -> Report:
     )
 
 
-def analyze_text(text: str) -> Report:
+def analyze_text(text: str, judge: Optional[SemanticJudge] = None) -> Report:
     """Plain-text entry point (no style info: L1 hidden-render checks skipped)."""
-    return analyze_spans([Span(text=text)])
+    return analyze_spans([Span(text=text)], judge=judge)
 
 
 # ----------------------------------------------------------------------------
