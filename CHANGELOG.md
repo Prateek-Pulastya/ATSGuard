@@ -1,5 +1,28 @@
 # Changelog
 
+## Unreleased — v2 (WS1 fence + WS2 outcome harness)
+
+Builds toward v2.0.0 per the v2 plan: make channel separation the primary,
+*measured* control, reproducing ResumeShield's ablation shape (arXiv:2609.20188)
+on ATSGuard's own corpora.
+
+- **Added** `benchmark_v2.py` — outcome-based ablation benchmark. Measures
+  attack-success-rate (did the screener obey?) across four stages: none /
+  filters (v1 detector, no fence) / fence / full. Reuses `atsguard.analyze_text`
+  as the filter and `atsguard.build_safe_prompt` as the fence base, plus
+  fence-marker stripping to block fence escape.
+- **Screener backends:** `simulated` (deterministic, CI-safe) and `ollama` (real
+  local model via localhost:11434, no API key — the user runs it).
+- **First result** (`results/ablation_simulated.json`, held_out_corpus.json, 28
+  attacks): none 50% → filters 21% → fence 0% → full 0% ASR; 50-pt reduction.
+  Filters-only ~21% echoes ResumeShield's 16.7%; the fence is what reaches 0.
+  **The fence=0 figures are the SIMULATED upper bound** — the headline number
+  (does a *real* model still leak through the fence?) comes from the ollama
+  backend and is expected > 0. That run is pending; it is the thing ResumeShield
+  could not measure.
+- `--min-reduction` gate (CI benchmark gate) and `--selftest` included.
+
+
 ## 0.2.0 — held-out evaluation and broader coverage
 
 The 98.8% recall was in-sample: `attack_corpus.py` disguises 8 command-style

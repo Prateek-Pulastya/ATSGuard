@@ -1,0 +1,13 @@
+{
+  "backend": "simulated",
+  "n": 28,
+  "detector_catch_rate": 0.42857142857142855,
+  "asr": {
+    "none": 0.5,
+    "filters": 0.21428571428571427,
+    "fence": 0.0,
+    "full": 0.0
+  },
+  "reduction_none_to_full": 0.5,
+  "corpus": "held_out_corpus.json"
+}
